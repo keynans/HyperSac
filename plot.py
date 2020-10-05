@@ -2,6 +2,8 @@ import numpy as np
 import argparse
 from matplotlib import pyplot as plt
 from scipy.ndimage.filters import gaussian_filter1d
+plt.style.use('ggplot')
+import matplotlib
 
 def read_log():
   with open("log.txt",'r') as fd:
@@ -74,16 +76,16 @@ def plot(args):
     a1 = np.load('results/'+ hyper + env + '_seed'+ str(seed+1) + '_scale1.npy')[:last]
     a2 = np.load('results/'+ hyper + env + '_seed'+ str(seed+2) + '_scale1.npy')[:last]
     #reg
-    b0 = np.load('results/'+ env + '_seed'+ str(seed+0) + '_scale1.npy')
+    b0 = np.load('results/' + env + '_seed'+ str(seed+0) + '_scale1.npy')[:1001]
     b1 = np.load('results/'+  env + '_seed'+ str(seed+1) + '_scale1.npy')
     b2 = np.load('results/'+  env + '_seed'+ str(seed+2) + '_scale1.npy')
   #  b3 = np.load('results/Hyper__HopperBulletEnv-v0_seed3_scale1.npy')
   #  b4 = np.load('results/Hyper__HopperBulletEnv-v0_seed4_scale1.npy')
 
-    total = np.vstack([a0, a1 ,a2])
+    total = np.vstack([a0, a1, a2])
     min_total_reg = np.min(total,axis=0)
     max_total_reg = np.max(total, axis=0)
-    avg_total_reg = np.mean(total, axis=0)
+    avg_total_reg = np.mean(total, axis=0)    
     total = np.vstack([b0, b1 ,b2])
     min_total_hyp = np.min(total,axis=0)
     max_total_hyp = np.max(total, axis=0)
@@ -103,39 +105,132 @@ def plot(args):
     plt.plot(range(len(avg_total_hyp)), fsmoothed, label="Regular critic 0.01 - SAC", color='#1B2ACC')
     plt.fill_between(range(len(min_total_hyp)), dsmoothed, esmoothed, facecolor='#089FFF', alpha=0.3)
     plt.legend()
-    plt.savefig(hyper + env +".png")
+    plt.savefig(hyper + env +".pdf")
     plt.close()  
 
-def plot_reward_scale(args):
+def normlaize_plot(args):
     hyper = "Hyper_"
     seed = 0
-    #env = "_HopperBulletEnv-v0"
-    #env = "_HalfCheetahBulletEnv-v0"
-    #env = "_Walker2DBulletEnv-v0"
-    #env = "_AntBulletEnv-v0"
-    env = "_HumanoidBulletEnv-v0"
-    a0 = np.load(hyper + env + '_seed'+ str(seed+0) + '_scale1.npy')
-    a1 = np.load(hyper + env + '_seed'+ str(seed+1) + '_scale1.npy')
-    a2 = np.load(hyper + env + '_seed'+ str(seed+2) + '_scale1.npy')
+    fontsize = 20
+    matplotlib.rc('font', size=fontsize)
+    norm_reg = []
+    norm_hyp = []
+    fig = plt.figure(1)
+    ax = fig.add_subplot(111)
+    mid = [707, 1001, 1001, 1001,1001]
+    envs = ["_HopperBulletEnv-v0", "_Walker2DBulletEnv-v0", "_AntBulletEnv-v0", "_HalfCheetahBulletEnv-v0"]
+    envs_name = ["Hopper", "Walker2D", "Ant", "HalfCheetah"]
+    for i,env in enumerate(envs):
+        last=1001
+        a0 = np.load('results/'+ hyper + env + '_seed'+ str(seed+0) + '_scale1.npy')[:last]
+        a1 = np.load('results/'+ hyper + env + '_seed'+ str(seed+1) + '_scale1.npy')[:last]
+        a2 = np.load('results/'+ hyper + env + '_seed'+ str(seed+2) + '_scale1.npy')[:last]
+        #reg
+        b0 = np.load('results/' + env + '_seed'+ str(seed+0) + '_scale1.npy')[:1001]
+        b1 = np.load('results/'+  env + '_seed'+ str(seed+1) + '_scale1.npy')
+        b2 = np.load('results/'+  env + '_seed'+ str(seed+2) + '_scale1.npy')
 
-    total = np.vstack([a0, a1, a2])
-    min_total = np.min(total,axis=0)
-    max_total = np.max(total, axis=0)
-    avg_total = np.mean(total, axis=0)
+        total = np.vstack([a0[:mid[i]], a1[:mid[i]], a2[:mid[i]]])
+        total1 = np.vstack([a0[mid[i]:], a1[mid[i]:]])
+        min_total_hyp = np.concatenate([np.min(total,axis=0),np.min(total1,axis=0)])
+        max_total_hyp = np.concatenate([np.max(total,axis=0),np.max(total1,axis=0)])
+        avg_total_hyp = np.concatenate([np.mean(total,axis=0),np.mean(total1,axis=0)])
+   
+        total = np.vstack([b0, b1 ,b2])
+        min_total_reg = np.min(total,axis=0)
+        max_total_reg = np.max(total, axis=0)
+        avg_total_reg = np.mean(total, axis=0)
 
-    plt.title(env)
-    plt.xlabel("steps 1e3")
-    plt.ylabel("rewards")
-    asmoothed = gaussian_filter1d(min_total, sigma=2)
-    bsmoothed = gaussian_filter1d(max_total, sigma=2)
-    csmoothed = gaussian_filter1d(avg_total, sigma=2)
+        base = avg_total_reg[0]
+        top = avg_total_reg[-1] - base
+        norm_reg.append((avg_total_reg - base) / top)
+        norm_hyp.append((avg_total_hyp - base) / top)
 
-    plt.plot(range(len(avg_total)), csmoothed, label="Hyper_SAC_reward_scale1_alpha0.01", color='#CC4F1B')
-    plt.fill_between(range(len(min_total)), bsmoothed, asmoothed, facecolor='#FF9848', alpha=0.3)
+    norm_max_hyp = np.max(norm_hyp,axis=0)
+    norm_min_hyp = np.min(norm_hyp,axis=0)
+    norm_mean_hyp = np.mean(norm_hyp,axis=0)
+    norm_max_reg = np.max(norm_reg,axis=0)
+    norm_min_reg = np.min(norm_reg,axis=0)
+    norm_mean_reg = np.mean(norm_reg,axis=0)
+  #  plt.title("normalized reward - SAC",fontsize=fontsize)
+    plt.xlabel("steps")
+  #  plt.ylabel("norm rewards")
+    asmoothed = gaussian_filter1d(norm_min_reg, sigma=2)
+    bsmoothed = gaussian_filter1d(norm_max_reg, sigma=2)
+    csmoothed = gaussian_filter1d(norm_mean_reg, sigma=2)
+    dsmoothed = gaussian_filter1d(norm_min_hyp, sigma=2)
+    esmoothed = gaussian_filter1d(norm_max_hyp, sigma=2)
+    fsmoothed = gaussian_filter1d(norm_mean_hyp, sigma=2)
+    ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+    ax.plot(range(0,len(norm_mean_hyp)*1000,1000), csmoothed, label="SAC", color='#CC4F1B',linewidth=2.5)
+    ax.fill_between(range(0,len(norm_mean_hyp)*1000,1000), bsmoothed, asmoothed, facecolor='#FF9848', alpha=0.3)
+    ax.plot(range(0,len(norm_mean_hyp)*1000,1000), fsmoothed, label="Hyper SAC", color='#1B2ACC',linewidth=2.5)
+    ax.fill_between(range(0,len(norm_mean_hyp)*1000,1000), dsmoothed, esmoothed, facecolor='#089FFF', alpha=0.3)
+    ax.grid(True)
+    text = ax.text(-0.2,1.01, "", transform=ax.transAxes)
+    lgd = ax.legend(loc='upper center',bbox_to_anchor=(0.5,-0.2),prop={'size': 20})
 
-    plt.legend()
-    plt.savefig(env+".png")
+    plt.savefig("normalize_SAC.pdf",bbox_extra_artists=(lgd,text), bbox_inches='tight')
     plt.close()  
+
+
+def plot_all():
+  fontsize=20
+  matplotlib.rc('font', size=fontsize)
+  fig, axs = plt.subplots(1, 4,constrained_layout=True, figsize=(20,5), sharex=True)
+  #tsize=fontsize)
+  envs = ["_HopperBulletEnv-v0", "_Walker2DBulletEnv-v0", "_AntBulletEnv-v0", "_HalfCheetahBulletEnv-v0"]
+  envs_name =  ["Hopper", "Walker2D", "Ant", "HalfCheetah"]
+  hyper = 'Hyper_'
+  seed=0
+  mid = [707, 1001, 1001, 1001]
+  for i,env in enumerate(envs):
+        a0 = np.load('results/'+ hyper + env + '_seed'+ str(seed+0) + '_scale1.npy')
+        a1 = np.load('results/'+ hyper + env + '_seed'+ str(seed+1) + '_scale1.npy')
+        a2 = np.load('results/'+ hyper + env + '_seed'+ str(seed+2) + '_scale1.npy')
+        #reg
+        b0 = np.load('results/' + env + '_seed'+ str(seed+0) + '_scale1.npy')
+        b1 = np.load('results/'+  env + '_seed'+ str(seed+1) + '_scale1.npy')
+        b2 = np.load('results/'+  env + '_seed'+ str(seed+2) + '_scale1.npy')
+
+        total = np.vstack([a0[:mid[i]], a1[:mid[i]], a2[:mid[i]]])
+        total1 = np.vstack([a0[mid[i]:], a1[mid[i]:]])
+        min_hyp = np.concatenate([np.min(total,axis=0),np.min(total1,axis=0)])
+        max_hyp = np.concatenate([np.max(total,axis=0),np.max(total1,axis=0)])
+        avg_hyp = np.concatenate([np.mean(total,axis=0),np.mean(total1,axis=0)])
+
+        total = np.vstack([b0, b1,b2])
+        min_reg = np.min(total,axis=0)
+        max_reg = np.max(total, axis=0)
+        avg_reg = np.mean(total, axis=0)
+
+        axs[i].set_title(envs_name[i])
+        d = gaussian_filter1d(min_hyp, sigma=2)
+        e = gaussian_filter1d(max_hyp, sigma=2)
+        f = gaussian_filter1d(avg_hyp, sigma=2)
+        l = gaussian_filter1d(min_reg, sigma=2)
+        m = gaussian_filter1d(max_reg, sigma=2)
+        n = gaussian_filter1d(avg_reg, sigma=2)
+        axs[i].ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        axs[i].plot(range(0,len(avg_hyp)*1000,1000), f, label="Hyper (Ours)", color='#CC4F1B',linewidth=2.5)
+        axs[i].fill_between(range(0,len(avg_hyp)*1000,1000), d, e, facecolor='#FF9848', alpha=0.4)
+        axs[i].plot(range(0,len(avg_hyp)*1000,1000), n, label="Standard net", color='#1B2ACC',linewidth=2.5)
+        axs[i].fill_between(range(0,len(avg_hyp)*1000,1000), m, l,facecolor='#089FFF', alpha=0.4)
+        axs[i].set_ylim(0,3300)
+        axs[i].set_xlabel("steps")
+  axs[0].set_ylabel("reward")
+  for ax in axs.flat:
+      ax.xaxis.set_tick_params(labelsize=fontsize)
+      ax.xaxis.offsetText.set_fontsize(fontsize-2)
+      ax.yaxis.set_tick_params(labelsize=fontsize)
+  for ax in axs.flat:
+      ax.label_outer() 
+  plt.grid(True)
+  
+  axs[3].legend(loc='lower right',prop={'size': 19})
+ # plt.savefig("total_Order_TD3.pdf")
+  plt.savefig("total_plots_SAC.pdf")
+  plt.close()  
 
 
 if __name__ == "__main__":
@@ -147,7 +242,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
    # a0 = read_log()
    # plot_reward_scale(args)
-    plot(args)
+   # plot(args)
+    normlaize_plot(args)
    # plot_hist(args)
+   # plot_all()
 
     

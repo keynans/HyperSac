@@ -15,27 +15,29 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 #eval over mean action
 def evaluate_agent(agent, eval_num, env, total_timesteps, eval_episodes=1):
-	avg_reward = 0.
-	for _ in range(eval_episodes):
-		obs = env.reset()
-		done = False
-		while not done:
-			_, _, mean, _ = agent.policy_network.sample_action(torch.Tensor(obs).view(1,-1).to(device))
-			obs, reward, done, _ = env.step(mean.detach().cpu().numpy()[0])
-			avg_reward += reward
+    avg_reward = 0.
+    for _ in range(eval_episodes):
+        obs = env.reset()
+        done = False
+        while not done:
+            _, _, mean, _ = agent.policy_network.sample_action(torch.Tensor(obs).view(1,-1).to(device))
+            obs, reward, done, _ = env.step(mean.detach().cpu().numpy()[0])
+            avg_reward += reward
 
-	avg_reward /= eval_episodes
+    avg_reward /= eval_episodes
 
-	print ("Eval: %d  Total_timesteps: %d Evaluation: %f,  time-%d " % (eval_num, total_timesteps, avg_reward, int(time.time()-t0)))
-	return avg_reward
+    print ("Eval: %d  Total_timesteps: %d Evaluation: %f,  time-%d " % (eval_num, total_timesteps, avg_reward, int(time.time()-t0)))
+    return avg_reward
 
 def main(args):
 
     # Initialize environment and agent
     env = gym.make(args.env_name)
+    test_env = gym.make(args.env_name)
     
     # Set seeds
     env.seed(args.seed)
+   # test_env.seed(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -46,7 +48,7 @@ def main(args):
     if not args.no_hyper:
         hyperstr = 'Hyper_'
     else:
-        hyperstr = ''
+        hyperstr = 'Dynamic_256'
     file_name = "%s_%s_seed%s_scale%d" % (hyperstr, args.env_name,args.seed,args.reward_scale)
 
     print("Start training...")
@@ -56,7 +58,7 @@ def main(args):
         state = env.reset()
         done = False
         j = 0
-        q1_loss=[]; q2_loss=[]; policy_loss=[]; policy_grad=[]; logs=[]; logs1=[]
+        q1_loss=[]; q2_loss=[]; policy_loss=[]; policy_grad=[]; logs=[]; logs1=[]; tar1 =[]; tar2 = []
         
         while not done:
             # sample action
@@ -70,35 +72,36 @@ def main(args):
                 # update of X amount for each env step
                 if i % args.steps_ratio == 0:
                     for k in range(args.update_ratio):
-                        q1, q2, policy_l, grad, q1_pi, q2_pi = agent.update_params(args.batch_size, args.gamma, args.tau, args.grad_clip)
-                        q1_loss.append(q1); q2_loss.append(q2); policy_loss.append(policy_l); policy_grad.append(grad); logs.append(q1_pi),logs1.append(q2_pi)
+                        q1, q2, policy_l, grad, q1_pi, q2_pi, target1, target2 = agent.update_params(args.batch_size, args.gamma, args.tau, args.grad_clip, i)
+                        q1_loss.append(q1); q2_loss.append(q2); policy_loss.append(policy_l); policy_grad.append(grad); logs.append(q1_pi),logs1.append(q2_pi), tar1.append(target1),tar2.append(target2)
 
 
             # prepare transition for replay memory push
             next_state, reward, done, _ = env.step(action)
+            z = env.env.robot.initial_z
             reward *= args.reward_scale
             i += 1
             j += 1
             episode_reward += reward
 
-            ndone = 1 if j == env._max_episode_steps else float(not done)
+            ndone = 1 if j >= env._max_episode_steps else float(not done)
             agent.replay_memory.push((state,action,reward,next_state,ndone))
             state = next_state
         
             # eval episode
             if i % args.eval_freq == 0:
                 evaluations.append(evaluate_agent(agent, i / args.eval_freq, env, i))
-                print ("alpha: %f" %agent.alpha)
                 np.save("./results/%s" % (file_name), evaluations)
-                for key in agent.hist:
-                    np.save("./histograms/histogram_%s_%s" %(key,file_name), agent.hist[key])
+                state = env.reset()
         
-        if agent.replay_memory.get_len() > args.batch_size: 
+        if (agent.replay_memory.get_len() > args.batch_size) and (np.mean(q1_loss) > 500 or np.mean(q2_loss) > 500): 
             print("q1: {:.4f} q2: {:.4f} policy: {:.4f} mean_norm: {:.4f} max_norm: {:.4f}".format(
             np.mean(q1_loss), np.mean(q2_loss), np.mean(policy_loss), np.mean(policy_grad), np.max(policy_grad)))
+            print("maxq1: {:.4f} maxq2: {:.4f} maxpolicy: {:.4f} mean_tar_q1: {:.4f} mintar_q1 {:.4f} maxtar_q1 {:.4f} tar_q2 {:.4f} min_tar_q2 {:.4f}".format(
+            np.max(q1_loss), np.max(q2_loss), np.max(policy_loss), np.mean(tar1), np.min(tar1), np.max(tar1),np.mean(tar2),np.min(tar2) ))
 
-        if np.mean(policy_grad) > 10 and not args.no_hyper:
-            agent.reduce_lr(args.lr_drop)
+        #if np.mean(policy_grad) > 10 and not args.no_hyper:
+       #     agent.reduce_lr(args.lr_drop)
         
         if i >= args.max_time_steps:
             break
@@ -120,7 +123,7 @@ if __name__ == '__main__':
         os.makedirs("./pytorch_models")
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default="HopperBulletEnv-v0",#"HalfCheetahBulletEnv-v0",#'AntBulletEnv-v0', # Walker2DBulletEnv-v0 # HalfCheetahBulletEnv-v0
+    parser.add_argument('--env_name', type=str, default="Walker2DBulletEnv-v0",#"HalfCheetahBulletEnv-v0",#'AntBulletEnv-v0', # Walker2DBulletEnv-v0 # HalfCheetahBulletEnv-v0
     #HopperBulletEnv-v0, #HumanoidBulletEnv-v0
         help='name of the environment')
     parser.add_argument("--seed", default=0, type=int,
@@ -148,9 +151,9 @@ if __name__ == '__main__':
         help='discount factor')
     parser.add_argument("--start_timesteps", default=1e3, type=int,
         help='number of timesteps at the start for exploration')
-    parser.add_argument('--min_log', type=int, default=-20,
+    parser.add_argument('--min_log', type=float, default=-20,
         help='min log')
-    parser.add_argument('--max_log', type=int, default=2,
+    parser.add_argument('--max_log', type=float, default=2,
         help='max log')
     parser.add_argument('--reward_scale', type=float, default=1,
         help='reward scale')
